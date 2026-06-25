@@ -39,4 +39,6 @@ You can install packages, run services, and experiment freely without affecting 
 **One-liner installation** – download and run the script in a single command:
 
 ```bash
-curl -s https://raw.githubusercontent.com/mourad000021/UserRoot/main/install.sh | bash
+curl -o ~/userroot.sh https://raw.githubusercontent.com/mourad000021/UserRoot/main/install.sh
+chmod +x ~/userroot.sh
+./userroot.sh
