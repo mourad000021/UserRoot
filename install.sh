@@ -1,174 +1,265 @@
 #!/bin/bash
 
-# ==============================================
-#  PROOT AUTO-SETUP SCRIPT (Alwaysdata)
-#  - Telegram: @Merad_Dev_Info
-#  - Downloads proot + rootfs
-#  - Configures shell to auto-login to it
-# ==============================================
+# ============================================================
+#  UserRoot v1.0 - Your Private Root Inside Your Home
+#  Concept: Don't hack the host, build your own root.
+#  Telegram: @Merad_Dev_Info
+# ============================================================
 
-set -e  # توقف عند أي خطأ
+set -e
 
-# الألوان
+# ---------- الألوان ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+MAGENTA='\033[0;35m'
+NC='\033[0m'
 
-# المتغيرات
-PROOT_DIR="$HOME/.proot"
-PROOT_BIN="$PROOT_DIR/proot"
-DISTRO_DIR="$PROOT_DIR/distros"
+# ---------- المتغيرات ----------
+BASE_DIR="$HOME/UserRoot"
+PROOT_BIN="$BASE_DIR/proot"
+DISTROS_DIR="$BASE_DIR/distros"
+CONFIG_FILE="$BASE_DIR/config.conf"
+CURRENT_DISTRO=""
 CHOICE=""
 
-# عرض البانر مع معلومات التيلجرام
-clear
-echo -e "${CYAN}=================================================="
-echo "  PROOT AUTO-SETUP (No Root Required)"
-echo -e "=================================================="
-echo -e "  ${GREEN}📱 Telegram: ${CYAN}@Merad_Dev_Info${NC}"
-echo -e "${CYAN}==================================================${NC}"
-echo ""
+# ---------- الدوال المساعدة ----------
+print_banner() {
+    clear
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════╗"
+    echo -e "║           ${MAGENTA}UserRoot ${CYAN}- Your Private Root          ║"
+    echo -e "║     ${GREEN}📱 Telegram: ${CYAN}@Merad_Dev_Info${CYAN}               ║"
+    echo -e "║  ${YELLOW}💡 Don't hack the host. Build your own root.${CYAN}    ║"
+    echo -e "╚════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+}
 
-# دالة التحميل مع مؤشر
 download_file() {
-    local url="$1"
-    local output="$2"
-    echo -e "${YELLOW}⏳ Loading $output ...${NC}"
-    wget -q --show-progress -O "$output" "$url"
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ Failed to download $output${NC}"
-        exit 1
-    fi
-    echo -e "${GREEN}✅ $output downloaded${NC}"
+    local url="$1"; local output="$2"
+    echo -e "${YELLOW}⏳ Downloading $(basename "$output")...${NC}"
+    wget -q --show-progress -O "$output" "$url" || {
+        echo -e "${RED}❌ Download failed.${NC}"
+        return 1
+    }
+    echo -e "${GREEN}✅ Done.${NC}"
 }
 
-# 1. تحميل أداة proot
+check_deps() {
+    for cmd in wget tar; do
+        if ! command -v "$cmd" &>/dev/null; then
+            echo -e "${RED}❌ '$cmd' is required but not installed.${NC}"
+            exit 1
+        fi
+    done
+}
+
+# ---------- الوظائف الأساسية ----------
 install_proot() {
-    echo -e "${YELLOW}📦 Installing proot...${NC}"
-    mkdir -p "$PROOT_DIR"
-    download_file "https://proot.gitlab.io/proot/bin/proot" "$PROOT_BIN"
+    echo -e "${YELLOW}📦 Installing UserRoot core (proot)...${NC}"
+    mkdir -p "$BASE_DIR"
+    download_file "https://proot.gitlab.io/proot/bin/proot" "$PROOT_BIN" || exit 1
     chmod +x "$PROOT_BIN"
-    echo -e "${GREEN}✅ proot installed at $PROOT_BIN${NC}"
+    echo -e "${GREEN}✅ Core installed at $PROOT_BIN${NC}"
 }
 
-# 2. تحميل نظام القاعدة (rootfs) حسب الاختيار
 install_distro() {
-    local distro_name="$1"
-    local distro_url="$2"
-    local distro_archive="$DISTRO_DIR/$distro_name.tar.gz"
-    local distro_folder="$DISTRO_DIR/$distro_name"
+    local name="$1"; local url="$2"
+    local archive="$DISTROS_DIR/${name}.tar"
+    local target_dir="$DISTROS_DIR/$name"
 
-    mkdir -p "$DISTRO_DIR"
-    echo -e "${YELLOW}📥 Downloading $distro_name rootfs...${NC}"
-    download_file "$distro_url" "$distro_archive"
+    mkdir -p "$DISTROS_DIR"
+    echo -e "${YELLOW}📥 Downloading $name root filesystem...${NC}"
+    download_file "$url" "$archive" || return 1
 
-    echo -e "${YELLOW}📂 Extracting $distro_name ...${NC}"
-    mkdir -p "$distro_folder"
-    tar -xzf "$distro_archive" -C "$distro_folder"
-    rm "$distro_archive"
-    echo -e "${GREEN}✅ $distro_name installed at $distro_folder${NC}"
+    echo -e "${YELLOW}📂 Extracting to $target_dir ...${NC}"
+    mkdir -p "$target_dir"
+    tar -xf "$archive" -C "$target_dir" || {
+        echo -e "${RED}❌ Extraction failed.${NC}"
+        rm -f "$archive"
+        return 1
+    }
+    rm -f "$archive"
+    echo -e "${GREEN}✅ $name installed at $target_dir${NC}"
 }
 
-# 3. تفعيل الدخول التلقائي (تعديل ملفات الشل)
+set_default_distro() {
+    local distro="$1"
+    echo "DEFAULT_DISTRO=$distro" > "$CONFIG_FILE"
+    CURRENT_DISTRO="$distro"
+    echo -e "${GREEN}✅ Default distro set to $distro${NC}"
+}
+
+get_default_distro() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+        echo "$DEFAULT_DISTRO"
+    else
+        echo ""
+    fi
+}
+
+# ---------- تفعيل الدخول التلقائي ----------
 auto_login() {
-    local distro_folder="$1"
-    local distro_name="$2"
+    local distro="$1"
+    local target_dir="$DISTROS_DIR/$distro"
     local login_code="
-# Auto-login to proot environment (Telegram: @Merad_Dev_Info)
-if [ -z \"\$PROOT_PREFIX\" ] && [ -f \"$PROOT_BIN\" ] && [ -d \"$distro_folder\" ]; then
-    echo -e \"${GREEN}🚀 Entering $distro_name environment as root...${NC}\"
+# UserRoot: Auto-login to your private root (Telegram: @Merad_Dev_Info)
+if [ -z \"\$PROOT_PREFIX\" ] && [ -f \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
+    echo -e \"${GREEN}🚀 Entering your UserRoot ($distro)...${NC}\"
     echo -e \"${CYAN}📱 Telegram: @Merad_Dev_Info${NC}\"
-    exec $PROOT_BIN -S $distro_folder
+    exec $PROOT_BIN -S $target_dir
 fi
 "
-    echo -e "${YELLOW}🔧 Configuring auto-login...${NC}"
-
-    # إضافة إلى .profile (يُقرأ في جميع الأصداف)
-    if ! grep -q "Auto-login to proot" ~/.profile 2>/dev/null; then
-        echo "$login_code" >> ~/.profile
-        echo -e "${GREEN}✅ Added to ~/.profile${NC}"
-    else
-        echo -e "${YELLOW}ℹ️  ~/.profile already contains auto-login${NC}"
-    fi
-
-    # إضافة إلى .bashrc (تأكيد إضافي)
-    if ! grep -q "Auto-login to proot" ~/.bashrc 2>/dev/null; then
-        echo "$login_code" >> ~/.bashrc
-        echo -e "${GREEN}✅ Added to ~/.bashrc${NC}"
-    else
-        echo -e "${YELLOW}ℹ️  ~/.bashrc already contains auto-login${NC}"
-    fi
-
-    # إضافة إلى .ssh/rc (الحل الأقوى)
-    mkdir -p ~/.ssh
-    if ! grep -q "Auto-login to proot" ~/.ssh/rc 2>/dev/null; then
-        echo "# Auto-login to proot (Telegram: @Merad_Dev_Info)" > ~/.ssh/rc
-        echo "exec $PROOT_BIN -S $distro_folder" >> ~/.ssh/rc
-        chmod +x ~/.ssh/rc
-        echo -e "${GREEN}✅ Added to ~/.ssh/rc${NC}"
-    else
-        echo -e "${YELLOW}ℹ️  ~/.ssh/rc already contains auto-login${NC}"
-    fi
-
-    echo -e "${GREEN}✅ Auto-login configured successfully!${NC}"
+    echo -e "${YELLOW}🔧 Configuring auto-login for $distro...${NC}"
+    for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
+        if [[ "$file" == ~/.ssh/rc ]]; then
+            mkdir -p ~/.ssh
+        fi
+        if ! grep -q "UserRoot: Auto-login" "$file" 2>/dev/null; then
+            echo "$login_code" >> "$file"
+            [[ "$file" == ~/.ssh/rc ]] && chmod +x "$file"
+            echo -e "${GREEN}✅ Added to $file${NC}"
+        else
+            echo -e "${YELLOW}ℹ️  Already in $file${NC}"
+        fi
+    done
 }
 
-# 4. قائمة التوزيعات المتاحة
-menu() {
-    echo -e "${BLUE}=================================================="
-    echo "  Choose a Linux distribution:"
-    echo -e "==================================================${NC}"
-    echo " 1) Ubuntu 22.04 (Jammy) - Recommended"
-    echo " 2) Alpine 3.19 (Lightweight)"
-    echo " 3) Debian 12 (Bookworm)"
-    echo " 4) Fedora 40"
-    echo -e "${BLUE}==================================================${NC}"
-    read -p "Enter choice (1/2/3/4): " CHOICE
+# ---------- قائمة التوزيعات ----------
+distro_menu() {
+    echo -e "${BLUE}╔═══════════════════════════════════════════════╗"
+    echo -e "║         Choose a distribution to install         ║"
+    echo -e "╚═══════════════════════════════════════════════╝${NC}"
+    echo " 1) Ubuntu 22.04 (Jammy)   - Recommended"
+    echo " 2) Debian 12 (Bookworm)   - Classic"
+    echo " 3) Alpine 3.19            - Super lightweight"
+    echo " 4) Fedora 40              - Cutting edge"
+    echo " 5) Cancel"
+    echo -e "${BLUE}───────────────────────────────────────────────${NC}"
+    read -p "Enter choice (1-5): " CHOICE
 
     case $CHOICE in
-        1)
-            distro_name="ubuntu"
-            distro_url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.3-base-amd64.tar.gz"
-            ;;
-        2)
-            distro_name="alpine"
-            distro_url="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.1-x86_64.tar.gz"
-            ;;
-        3)
-            distro_name="debian"
-            distro_url="https://github.com/debuerreotype/docker-debian-artifacts/raw/dist-amd64/bookworm/slim/rootfs.tar.xz"
-            ;;
-        4)
-            distro_name="fedora"
-            distro_url="https://download.fedoraproject.org/pub/fedora/linux/releases/40/Container/x86_64/images/Fedora-Container-Base-40-1.14.x86_64.tar.xz"
-            ;;
-        *)
-            echo -e "${RED}❌ Invalid choice${NC}"
-            exit 1
-            ;;
+        1) distro="ubuntu"; url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.3-base-amd64.tar.gz" ;;
+        2) distro="debian"; url="https://github.com/debuerreotype/docker-debian-artifacts/raw/dist-amd64/bookworm/slim/rootfs.tar.xz" ;;
+        3) distro="alpine"; url="https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.1-x86_64.tar.gz" ;;
+        4) distro="fedora"; url="https://download.fedoraproject.org/pub/fedora/linux/releases/40/Container/x86_64/images/Fedora-Container-Base-40-1.14.x86_64.tar.xz" ;;
+        5) echo -e "${YELLOW}❌ Cancelled.${NC}"; exit 0 ;;
+        *) echo -e "${RED}❌ Invalid choice.${NC}"; exit 1 ;;
     esac
-
-    distro_folder="$DISTRO_DIR/$distro_name"
 }
 
-# 5. التثبيت الكامل
-main() {
-    menu
-    install_proot
-    install_distro "$distro_name" "$distro_url"
-    auto_login "$distro_folder" "$distro_name"
+# ---------- قائمة الإدارة ----------
+manage_menu() {
+    while true; do
+        print_banner
+        echo -e "${CYAN}╔═══════════════════════════════════════════════╗"
+        echo -e "║               UserRoot Manager                  ║"
+        echo -e "╚═══════════════════════════════════════════════╝${NC}"
+        echo " 1) Install a new distribution"
+        echo " 2) List installed distributions"
+        echo " 3) Switch default distribution"
+        echo " 4) Remove a distribution"
+        echo " 5) Update proot core"
+        echo " 6) Enter a distribution (manual)"
+        echo " 7) Exit"
+        echo -e "${BLUE}───────────────────────────────────────────────${NC}"
+        read -p "Choose an option: " opt
 
-    echo -e "${GREEN}=================================================="
-    echo "  ✅ Setup complete!"
-    echo -e "==================================================${NC}"
-    echo -e "${CYAN}📱 Telegram: @Merad_Dev_Info${NC}"
-    echo -e "${YELLOW}⚡ To apply changes, run:${NC}"
-    echo "  source ~/.profile"
-    echo -e "${YELLOW}⚡ Or just exit and reconnect via SSH.${NC}"
-    echo -e "${GREEN}✅ Your default environment is now $distro_name!${NC}"
+        case $opt in
+            1)
+                distro_menu
+                install_distro "$distro" "$url"
+                # Ask if set as default
+                read -p "Set this distro as default? (y/n): " setdef
+                if [[ "$setdef" =~ ^[Yy]$ ]]; then
+                    set_default_distro "$distro"
+                    auto_login "$distro"
+                fi
+                ;;
+            2)
+                echo -e "${YELLOW}Installed distros:${NC}"
+                ls -1 "$DISTROS_DIR" 2>/dev/null || echo "None"
+                read -p "Press Enter to continue..."
+                ;;
+            3)
+                echo -e "${YELLOW}Available distros:${NC}"
+                ls -1 "$DISTROS_DIR" 2>/dev/null || { echo "None"; continue; }
+                read -p "Enter distro name to set as default: " def
+                if [[ -d "$DISTROS_DIR/$def" ]]; then
+                    set_default_distro "$def"
+                    auto_login "$def"
+                else
+                    echo -e "${RED}❌ Not found.${NC}"
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            4)
+                echo -e "${YELLOW}Installed distros:${NC}"
+                ls -1 "$DISTROS_DIR" 2>/dev/null || { echo "None"; continue; }
+                read -p "Enter distro name to remove: " rem
+                if [[ -d "$DISTROS_DIR/$rem" ]]; then
+                    rm -rf "$DISTROS_DIR/$rem"
+                    echo -e "${GREEN}✅ Removed.${NC}"
+                    # If it was default, clear config
+                    if [[ "$(get_default_distro)" == "$rem" ]]; then
+                        rm -f "$CONFIG_FILE"
+                        echo -e "${YELLOW}Default distro cleared.${NC}"
+                    fi
+                else
+                    echo -e "${RED}❌ Not found.${NC}"
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            5)
+                echo -e "${YELLOW}Updating proot...${NC}"
+                rm -f "$PROOT_BIN"
+                install_proot
+                read -p "Press Enter to continue..."
+                ;;
+            6)
+                echo -e "${YELLOW}Available distros:${NC}"
+                ls -1 "$DISTROS_DIR" 2>/dev/null || { echo "None"; continue; }
+                read -p "Enter distro name to enter: " ent
+                if [[ -d "$DISTROS_DIR/$ent" ]]; then
+                    echo -e "${GREEN}🚀 Entering $ent...${NC}"
+                    exec "$PROOT_BIN" -S "$DISTROS_DIR/$ent"
+                else
+                    echo -e "${RED}❌ Not found.${NC}"
+                fi
+                ;;
+            7)
+                echo -e "${GREEN}👋 Goodbye!${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}❌ Invalid option.${NC}"
+                ;;
+        esac
+    done
+}
+
+# ---------- التثبيت الأولي أو الإدارة ----------
+main() {
+    check_deps
+
+    # إذا لم يكن هناك مجلد distros، نبدأ التثبيت
+    if [[ ! -d "$DISTROS_DIR" ]]; then
+        print_banner
+        echo -e "${YELLOW}⚡ No distribution found. Let's set up your UserRoot.${NC}"
+        distro_menu
+        install_proot
+        install_distro "$distro" "$url"
+        set_default_distro "$distro"
+        auto_login "$distro"
+        echo -e "${GREEN}✅ UserRoot setup complete!${NC}"
+        echo -e "${YELLOW}⚡ To use it, type 'exit' and reconnect via SSH.${NC}"
+        echo -e "${YELLOW}⚡ Or run './userroot.sh' again to manage.${NC}"
+    else
+        # الإدارة
+        manage_menu
+    fi
 }
 
 # تشغيل
