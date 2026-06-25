@@ -36,6 +36,7 @@ You can install packages, run services, and experiment freely without affecting 
 
 ## 🚀 Installation
 
-1. **Download the script** directly from the official repository:
-   ```bash
-   curl -o ~/userroot.sh https://raw.githubusercontent.com/mourad000021/UserRoot/main/install.sh
+**One-liner installation** – download and run the script in a single command:
+
+```bash
+curl -s https://raw.githubusercontent.com/mourad000021/UserRoot/main/install.sh | bash
