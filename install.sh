@@ -85,7 +85,7 @@ install_distro() {
     rm -f "$archive"
     echo -e "${GREEN}✅ $name installed at $target_dir${NC}"
 
-    # تثبيت الحزم الإضافية وتفعيل fastfetch (تمت الإضافة)
+    # تثبيت الحزم الإضافية وتفعيل fastfetch
     install_extras "$target_dir"
 }
 
@@ -150,14 +150,30 @@ if ! grep -q "UserRoot: Auto-login" ~/.ssh/rc 2>/dev/null; then
 fi
 }
 
-# ---------- دالة تثبيت الحزم الإضافية (المضافة) ----------
+# ---------- دالة تثبيت الحزم الإضافية (مُحسَّنة) ----------
 install_extras() {
     local target_dir="$1"
 
     $PROOT_BIN -S "$target_dir" /bin/sh -c '
+set -e  # داخل البيئة الجديدة
 
 if command -v apt >/dev/null 2>&1; then
-    apt update
+    # إصلاح sources.list إذا كان فارغًا أو مفقودًا
+    if [ ! -s /etc/apt/sources.list ]; then
+        cat > /etc/apt/sources.list <<EOF
+deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
+EOF
+    fi
+
+    # تحديث القوائم مع التحقق من النجاح
+    echo "Updating package lists..."
+    if ! apt update; then
+        echo "❌ Failed to update package lists. Exiting extras installation."
+        exit 1
+    fi
+
     DEBIAN_FRONTEND=noninteractive apt install -y fastfetch nano curl wget git less
 
 elif command -v apk >/dev/null 2>&1; then
@@ -171,6 +187,7 @@ elif command -v yum >/dev/null 2>&1; then
     yum install -y fastfetch nano curl wget git less
 fi
 
+# إضافة fastfetch إلى .bashrc
 cat >> /root/.bashrc <<EOF
 
 clear
@@ -178,7 +195,6 @@ if command -v fastfetch >/dev/null 2>&1; then
     fastfetch
 fi
 EOF
-
 '
 }
 
