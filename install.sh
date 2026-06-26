@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 # ---------- المتغيرات ----------
 BASE_DIR="$HOME/UserRoot"
@@ -37,7 +37,8 @@ print_banner() {
 }
 
 download_file() {
-    local url="$1"; local output="$2"
+    local url="$1"
+    local output="$2"
     echo -e "${YELLOW}⏳ Downloading $(basename "$output")...${NC}"
     wget -q --show-progress -O "$output" "$url" || {
         echo -e "${RED}❌ Download failed.${NC}"
@@ -65,7 +66,8 @@ install_proot() {
 }
 
 install_distro() {
-    local name="$1"; local url="$2"
+    local name="$1"
+    local url="$2"
     local archive="$DISTROS_DIR/${name}.tar"
     local target_dir="$DISTROS_DIR/$name"
 
@@ -100,30 +102,42 @@ get_default_distro() {
     fi
 }
 
-# ---------- تفعيل الدخول التلقائي ----------
+# ---------- تفعيل الدخول التلقائي (الإصدار المُصلَح) ----------
 auto_login() {
     local distro="$1"
     local target_dir="$DISTROS_DIR/$distro"
+
+    # كود الدخول التلقائي - تم إزالة echo -e واستخدام printf للتوافق
     local login_code="
 # UserRoot: Auto-login to your private root (Telegram: @Merad_Dev_Info)
 if [ -z \"\$PROOT_PREFIX\" ] && [ -f \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
-    echo -e \"${GREEN}🚀 Entering your UserRoot ($distro)...${NC}\"
-    echo -e \"${CYAN}📱 Telegram: @Merad_Dev_Info${NC}\"
+    printf \"${GREEN}🚀 Entering your UserRoot ($distro)...${NC}\n\"
+    printf \"${CYAN}📱 Telegram: @Merad_Dev_Info${NC}\n\"
     exec $PROOT_BIN -S $target_dir
 fi
 "
+
     echo -e "${YELLOW}🔧 Configuring auto-login for $distro...${NC}"
+
+    # حذف أي إعدادات سابقة لـ UserRoot من الملفات لمنع التكرار
+    for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
+        if [[ -f "$file" ]]; then
+            # حذف الأسطر التي تبدأ بـ "# UserRoot:" أو تحتوي على "UserRoot: Auto-login"
+            sed -i '/^# UserRoot:/d' "$file" 2>/dev/null
+            sed -i '/UserRoot: Auto-login/d' "$file" 2>/dev/null
+            # حذف الكتلة الكاملة بين "# UserRoot:" و "fi" إن وجدت
+            sed -i '/# UserRoot:/,/fi/d' "$file" 2>/dev/null
+        fi
+    done
+
+    # إضافة الكود الجديد إلى الملفات
     for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
         if [[ "$file" == ~/.ssh/rc ]]; then
             mkdir -p ~/.ssh
         fi
-        if ! grep -q "UserRoot: Auto-login" "$file" 2>/dev/null; then
-            echo "$login_code" >> "$file"
-            [[ "$file" == ~/.ssh/rc ]] && chmod +x "$file"
-            echo -e "${GREEN}✅ Added to $file${NC}"
-        else
-            echo -e "${YELLOW}ℹ️  Already in $file${NC}"
-        fi
+        echo "$login_code" >> "$file"
+        [[ "$file" == ~/.ssh/rc ]] && chmod +x "$file"
+        echo -e "${GREEN}✅ Added to $file${NC}"
     done
 }
 
@@ -171,7 +185,6 @@ manage_menu() {
             1)
                 distro_menu
                 install_distro "$distro" "$url"
-                # Ask if set as default
                 read -p "Set this distro as default? (y/n): " setdef
                 if [[ "$setdef" =~ ^[Yy]$ ]]; then
                     set_default_distro "$distro"
@@ -202,7 +215,6 @@ manage_menu() {
                 if [[ -d "$DISTROS_DIR/$rem" ]]; then
                     rm -rf "$DISTROS_DIR/$rem"
                     echo -e "${GREEN}✅ Removed.${NC}"
-                    # If it was default, clear config
                     if [[ "$(get_default_distro)" == "$rem" ]]; then
                         rm -f "$CONFIG_FILE"
                         echo -e "${YELLOW}Default distro cleared.${NC}"
@@ -244,7 +256,6 @@ manage_menu() {
 main() {
     check_deps
 
-    # إذا لم يكن هناك مجلد distros، نبدأ التثبيت
     if [[ ! -d "$DISTROS_DIR" ]]; then
         print_banner
         echo -e "${YELLOW}⚡ No distribution found. Let's set up your UserRoot.${NC}"
@@ -257,7 +268,6 @@ main() {
         echo -e "${YELLOW}⚡ To use it, type 'exit' and reconnect via SSH.${NC}"
         echo -e "${YELLOW}⚡ Or run './userroot.sh' again to manage.${NC}"
     else
-        # الإدارة
         manage_menu
     fi
 }
