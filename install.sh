@@ -77,13 +77,23 @@ install_distro() {
 
     echo -e "${YELLOW}📂 Extracting to $target_dir ...${NC}"
     mkdir -p "$target_dir"
-    tar -xf "$archive" -C "$target_dir" || {
+    # استخدام خيارات تحافظ على المالكين والصلاحيات لتجنب مشاكل apt في بيئات الاستضافة
+    tar --numeric-owner -xpf "$archive" -C "$target_dir" || {
         echo -e "${RED}❌ Extraction failed.${NC}"
         rm -f "$archive"
         return 1
     }
     rm -f "$archive"
     echo -e "${GREEN}✅ $name installed at $target_dir${NC}"
+
+    # إصلاح صلاحيات apt GPG لإصلاح مشاكل "Operation not permitted" في بيئات مثل AlwaysData
+    if [[ -d "$target_dir/etc/apt/trusted.gpg.d" ]]; then
+        chmod 755 "$target_dir"/etc/apt/trusted.gpg.d
+        chmod 644 "$target_dir"/etc/apt/trusted.gpg.d/*.gpg 2>/dev/null || true
+    fi
+    if [[ -d "$target_dir/usr/share/keyrings" ]]; then
+        chmod 644 "$target_dir"/usr/share/keyrings/*.gpg 2>/dev/null || true
+    fi
 
     # تثبيت الحزم الإضافية وتفعيل fastfetch
     install_extras "$target_dir"
