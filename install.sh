@@ -84,6 +84,9 @@ install_distro() {
     }
     rm -f "$archive"
     echo -e "${GREEN}✅ $name installed at $target_dir${NC}"
+
+    # تثبيت الحزم الإضافية وتفعيل fastfetch (تمت الإضافة)
+    install_extras "$target_dir"
 }
 
 set_default_distro() {
@@ -105,50 +108,80 @@ get_default_distro() {
 # ---------- تفعيل الدخول التلقائي (الإصدار المُصلَح) ----------
 auto_login() {
     local distro="$1"
-    local target_dir="$DISTROS_DIR/$distro"
-
-    local login_code="
-# UserRoot: Auto-login (Telegram: @Merad_Dev_Info)
-if [ -z \"\$PROOT_PREFIX\" ] && [ -x \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
     export PROOT_PREFIX=1
+    exec "$PROOT_BIN" -S "$target_dir"
+    # كود الدخول التلقائي - تم إزالة echo -e واستخدام printf للتوافق
+    local login_code="
+# UserRoot: Auto-login to your private root (Telegram: @Merad_Dev_Info)
+if [ -z \"\$PROOT_PREFIX\" ] && [ -f \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
     printf \"${GREEN}🚀 Entering your UserRoot ($distro)...${NC}\n\"
     printf \"${CYAN}📱 Telegram: @Merad_Dev_Info${NC}\n\"
-    exec \"$PROOT_BIN\" -S \"$target_dir\"
+    exec $PROOT_BIN -S $target_dir
 fi
 "
 
     echo -e "${YELLOW}🔧 Configuring auto-login for $distro...${NC}"
 
-    mkdir -p "$HOME/.ssh"
-    touch "$HOME/.bashrc" "$HOME/.profile" "$HOME/.ssh/rc"
-
-    # إزالة أي كود قديم لـ UserRoot
-    for file in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.ssh/rc"; do
-        sed -i '/# UserRoot: Auto-login/,/fi/d' "$file" 2>/dev/null
+    # حذف أي إعدادات سابقة لـ UserRoot من الملفات لمنع التكرار
+    for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
+        if [[ -f "$file" ]]; then
+            # حذف الأسطر التي تبدأ بـ "# UserRoot:" أو تحتوي على "UserRoot: Auto-login"
+            sed -i '/^# UserRoot:/d' "$file" 2>/dev/null
+            sed -i '/UserRoot: Auto-login/d' "$file" 2>/dev/null
+            # حذف الكتلة الكاملة بين "# UserRoot:" و "fi" إن وجدت
+            sed -i '/# UserRoot:/,/fi/d' "$file" 2>/dev/null
+        fi
     done
 
-    # profile فقط يشغل bashrc
-    cat > "$HOME/.profile" <<'EOF'
-# Load bash configuration
-if [ -f "$HOME/.bashrc" ]; then
-    . "$HOME/.bashrc"
+    # إضافة الكود الجديد إلى الملفات
+    mkdir -p ~/.ssh
+
+cat > ~/.profile <<'EOF'
+[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+EOF
+
+if ! grep -q "UserRoot: Auto-login" ~/.bashrc 2>/dev/null; then
+    printf "%s\n" "$login_code" >> ~/.bashrc
+fi
+
+if ! grep -q "UserRoot: Auto-login" ~/.ssh/rc 2>/dev/null; then
+    printf "%s\n" "$login_code" >> ~/.ssh/rc
+    chmod +x ~/.ssh/rc
+fi
+}
+
+# ---------- دالة تثبيت الحزم الإضافية (المضافة) ----------
+install_extras() {
+    local target_dir="$1"
+
+    $PROOT_BIN -S "$target_dir" /bin/sh -c '
+
+if command -v apt >/dev/null 2>&1; then
+    apt update
+    DEBIAN_FRONTEND=noninteractive apt install -y fastfetch nano curl wget git less
+
+elif command -v apk >/dev/null 2>&1; then
+    apk update
+    apk add fastfetch nano curl wget git less
+
+elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y fastfetch nano curl wget git less
+
+elif command -v yum >/dev/null 2>&1; then
+    yum install -y fastfetch nano curl wget git less
+fi
+
+cat >> /root/.bashrc <<EOF
+
+clear
+if command -v fastfetch >/dev/null 2>&1; then
+    fastfetch
 fi
 EOF
 
-    # إضافة الكود إلى bashrc مرة واحدة فقط
-    if ! grep -q "UserRoot: Auto-login" "$HOME/.bashrc"; then
-        printf "%s\n" "$login_code" >> "$HOME/.bashrc"
-    fi
-
-    # بعض مزودي الاستضافة ينفذون ~/.ssh/rc قبل bashrc
-    cat > "$HOME/.ssh/rc" <<'EOF'
-#!/bin/sh
-[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
-EOF
-    chmod +x "$HOME/.ssh/rc"
-
-    echo -e "${GREEN}✅ Auto-login configured successfully.${NC}"
+'
 }
+
 # ---------- قائمة التوزيعات ----------
 distro_menu() {
     echo -e "${BLUE}╔═══════════════════════════════════════════════╗"
