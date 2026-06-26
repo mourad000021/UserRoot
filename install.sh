@@ -107,40 +107,48 @@ auto_login() {
     local distro="$1"
     local target_dir="$DISTROS_DIR/$distro"
 
-    # كود الدخول التلقائي - تم إزالة echo -e واستخدام printf للتوافق
     local login_code="
-# UserRoot: Auto-login to your private root (Telegram: @Merad_Dev_Info)
-if [ -z \"\$PROOT_PREFIX\" ] && [ -f \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
+# UserRoot: Auto-login (Telegram: @Merad_Dev_Info)
+if [ -z \"\$PROOT_PREFIX\" ] && [ -x \"$PROOT_BIN\" ] && [ -d \"$target_dir\" ]; then
+    export PROOT_PREFIX=1
     printf \"${GREEN}🚀 Entering your UserRoot ($distro)...${NC}\n\"
     printf \"${CYAN}📱 Telegram: @Merad_Dev_Info${NC}\n\"
-    exec $PROOT_BIN -S $target_dir
+    exec \"$PROOT_BIN\" -S \"$target_dir\"
 fi
 "
 
     echo -e "${YELLOW}🔧 Configuring auto-login for $distro...${NC}"
 
-    # حذف أي إعدادات سابقة لـ UserRoot من الملفات لمنع التكرار
-    for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
-        if [[ -f "$file" ]]; then
-            # حذف الأسطر التي تبدأ بـ "# UserRoot:" أو تحتوي على "UserRoot: Auto-login"
-            sed -i '/^# UserRoot:/d' "$file" 2>/dev/null
-            sed -i '/UserRoot: Auto-login/d' "$file" 2>/dev/null
-            # حذف الكتلة الكاملة بين "# UserRoot:" و "fi" إن وجدت
-            sed -i '/# UserRoot:/,/fi/d' "$file" 2>/dev/null
-        fi
+    mkdir -p "$HOME/.ssh"
+    touch "$HOME/.bashrc" "$HOME/.profile" "$HOME/.ssh/rc"
+
+    # إزالة أي كود قديم لـ UserRoot
+    for file in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.ssh/rc"; do
+        sed -i '/# UserRoot: Auto-login/,/fi/d' "$file" 2>/dev/null
     done
 
-    # إضافة الكود الجديد إلى الملفات
-    for file in ~/.profile ~/.bashrc ~/.ssh/rc; do
-        if [[ "$file" == ~/.ssh/rc ]]; then
-            mkdir -p ~/.ssh
-        fi
-        echo "$login_code" >> "$file"
-        [[ "$file" == ~/.ssh/rc ]] && chmod +x "$file"
-        echo -e "${GREEN}✅ Added to $file${NC}"
-    done
+    # profile فقط يشغل bashrc
+    cat > "$HOME/.profile" <<'EOF'
+# Load bash configuration
+if [ -f "$HOME/.bashrc" ]; then
+    . "$HOME/.bashrc"
+fi
+EOF
+
+    # إضافة الكود إلى bashrc مرة واحدة فقط
+    if ! grep -q "UserRoot: Auto-login" "$HOME/.bashrc"; then
+        printf "%s\n" "$login_code" >> "$HOME/.bashrc"
+    fi
+
+    # بعض مزودي الاستضافة ينفذون ~/.ssh/rc قبل bashrc
+    cat > "$HOME/.ssh/rc" <<'EOF'
+#!/bin/sh
+[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+EOF
+    chmod +x "$HOME/.ssh/rc"
+
+    echo -e "${GREEN}✅ Auto-login configured successfully.${NC}"
 }
-
 # ---------- قائمة التوزيعات ----------
 distro_menu() {
     echo -e "${BLUE}╔═══════════════════════════════════════════════╗"
