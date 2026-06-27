@@ -77,23 +77,13 @@ install_distro() {
 
     echo -e "${YELLOW}📂 Extracting to $target_dir ...${NC}"
     mkdir -p "$target_dir"
-    # استخدام خيارات تحافظ على المالكين والصلاحيات لتجنب مشاكل apt في بيئات الاستضافة
-    tar --numeric-owner -xpf "$archive" -C "$target_dir" || {
+    tar -xf "$archive" -C "$target_dir" || {
         echo -e "${RED}❌ Extraction failed.${NC}"
         rm -f "$archive"
         return 1
     }
     rm -f "$archive"
     echo -e "${GREEN}✅ $name installed at $target_dir${NC}"
-
-    # إصلاح صلاحيات apt GPG لإصلاح مشاكل "Operation not permitted" في بيئات مثل AlwaysData
-    if [[ -d "$target_dir/etc/apt/trusted.gpg.d" ]]; then
-        chmod 755 "$target_dir"/etc/apt/trusted.gpg.d
-        chmod 644 "$target_dir"/etc/apt/trusted.gpg.d/*.gpg 2>/dev/null || true
-    fi
-    if [[ -d "$target_dir/usr/share/keyrings" ]]; then
-        chmod 644 "$target_dir"/usr/share/keyrings/*.gpg 2>/dev/null || true
-    fi
 
     # تثبيت الحزم الإضافية وتفعيل fastfetch
     install_extras "$target_dir"
@@ -160,30 +150,14 @@ if ! grep -q "UserRoot: Auto-login" ~/.ssh/rc 2>/dev/null; then
 fi
 }
 
-# ---------- دالة تثبيت الحزم الإضافية (مُحسَّنة) ----------
+# ---------- دالة تثبيت الحزم الإضافية (المضافة) ----------
 install_extras() {
     local target_dir="$1"
 
     $PROOT_BIN -S "$target_dir" /bin/sh -c '
-set -e  # داخل البيئة الجديدة
 
 if command -v apt >/dev/null 2>&1; then
-    # إصلاح sources.list إذا كان فارغًا أو مفقودًا
-    if [ ! -s /etc/apt/sources.list ]; then
-        cat > /etc/apt/sources.list <<EOF
-deb http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse
-deb http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse
-deb http://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
-EOF
-    fi
-
-    # تحديث القوائم مع التحقق من النجاح
-    echo "Updating package lists..."
-    if ! apt update; then
-        echo "❌ Failed to update package lists. Exiting extras installation."
-        exit 1
-    fi
-
+    apt update
     DEBIAN_FRONTEND=noninteractive apt install -y fastfetch nano curl wget git less
 
 elif command -v apk >/dev/null 2>&1; then
@@ -197,7 +171,6 @@ elif command -v yum >/dev/null 2>&1; then
     yum install -y fastfetch nano curl wget git less
 fi
 
-# إضافة fastfetch إلى .bashrc
 cat >> /root/.bashrc <<EOF
 
 clear
@@ -205,6 +178,7 @@ if command -v fastfetch >/dev/null 2>&1; then
     fastfetch
 fi
 EOF
+
 '
 }
 
